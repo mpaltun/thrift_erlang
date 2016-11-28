@@ -43,7 +43,7 @@
                   thrift_opts,
                   reconn_min,
                   reconn_max,
-                  reconn_time,
+                  reconn_time = 0,
                   op_cnt_dict,
                   op_time_dict } ).
 
@@ -115,9 +115,9 @@ handle_call( { call, Op, Args },
              _From,
              State=#state{ client = Client } ) ->
 
-  Start = now(),
+  Timer = timer_fun(),
   Result = ( catch thrift_client:call( Client, Op, Args) ),
-  Time = timer:now_diff( now(), Start ),
+  Time = Timer(),
 
   case Result of
     { C, { ok, Reply } } ->
@@ -156,6 +156,9 @@ handle_cast( _Msg, State ) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
+handle_info( try_connect, State ) ->
+  { noreply, try_connect( State ) };
+
 handle_info( _Info, State ) ->
   { noreply, State }.
 
@@ -214,6 +217,21 @@ reconn_time( #state{ reconn_max = ReconnMax, reconn_time = R } ) ->
     false -> Backoff
   end.
 
+-ifdef(time_correction).
+timer_fun() ->
+  T1 = erlang:monotonic_time(),
+  fun() ->
+    T2 = erlang:monotonic_time(),
+    erlang:convert_time_unit(T2 - T1, native, micro_seconds)
+  end.
+-else.
+timer_fun() ->
+  T1 = erlang:now(),
+  fun() ->
+    T2 = erlang:now(),
+    timer:now_diff(T2, T1)
+  end.
+-endif.
 
 incr_stats( Op, Result, Time,
             State = #state{ op_cnt_dict  = OpCntDict,
